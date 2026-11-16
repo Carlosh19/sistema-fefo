@@ -91,7 +91,7 @@ if not st.session_state["autenticado"]:
                 except Exception as e:
                     st.error(f"Erro ao autenticar: {e}")
     
-    st.stop()  # Impede totalmente que o restante do app seja renderizado sem login
+    st.stop()
 
 
 # ==========================================
@@ -101,19 +101,17 @@ if not st.session_state["autenticado"]:
 perfil_atual = st.session_state["perfil"]
 usuario_atual = st.session_state["usuario_logado"]
 
-# Barra Lateral com Informações e Logout
-st.sidebar.markdown(f"👤 **Logado como:** {usuario_atual}")
-st.sidebar.markdown(f"🛡️ **Perfil:** `{perfil_atual}`")
+# --- BARRA LATERAL (RODAPÉ FIXO PARA PERFIL E LOGOUT) ---
+with st.sidebar.container(bottom=True):
+    st.markdown(f"👤 **Logado:** {usuario_atual}")
+    st.markdown(f"🛡️ **Perfil:** `{perfil_atual}`")
+    if st.button("🚪 Sair do Sistema", use_container_width=True):
+        st.session_state["autenticado"] = False
+        st.session_state["usuario_logado"] = None
+        st.session_state["perfil"] = None
+        st.rerun()
 
-if st.sidebar.button("🚪 Sair do Sistema"):
-    st.session_state["autenticado"] = False
-    st.session_state["usuario_logado"] = None
-    st.session_state["perfil"] = None
-    st.rerun()
-
-st.sidebar.divider()
-
-# Montar opções de menu de acordo com o perfil
+# Montar opções de menu visíveis com st.radio
 opcoes_menu = [
     "📊 Painel FEFO & Estoque",
     "📥 Entradas (Recebimento & Gestão)",
@@ -124,7 +122,8 @@ opcoes_menu = [
 if perfil_atual == "Administrador":
     opcoes_menu.append("👥 Gerenciar Usuários")
 
-menu = st.sidebar.selectbox("Navegação", opcoes_menu)
+st.sidebar.markdown("### Navegação")
+menu = st.sidebar.radio("Ir para:", opcoes_menu, label_visibility="collapsed")
 
 st.title("🧀 Controle de Estoque & Expedição FEFO")
 st.markdown("Gerenciamento inteligente de laticínios baseado no critério **Primeiro que Vence, Primeiro que Sai (FEFO)**.")
