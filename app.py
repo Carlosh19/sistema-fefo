@@ -101,17 +101,7 @@ if not st.session_state["autenticado"]:
 perfil_atual = st.session_state["perfil"]
 usuario_atual = st.session_state["usuario_logado"]
 
-# --- BARRA LATERAL (RODAPÉ FIXO PARA PERFIL E LOGOUT) ---
-with st.sidebar.container(bottom=True):
-    st.markdown(f"👤 **Logado:** {usuario_atual}")
-    st.markdown(f"🛡️ **Perfil:** `{perfil_atual}`")
-    if st.button("🚪 Sair do Sistema", use_container_width=True):
-        st.session_state["autenticado"] = False
-        st.session_state["usuario_logado"] = None
-        st.session_state["perfil"] = None
-        st.rerun()
-
-# Montar opções de menu visíveis com st.radio
+# Montar opções de menu visíveis com st.radio (todas à vista)
 opcoes_menu = [
     "📊 Painel FEFO & Estoque",
     "📥 Entradas (Recebimento & Gestão)",
@@ -124,6 +114,17 @@ if perfil_atual == "Administrador":
 
 st.sidebar.markdown("### Navegação")
 menu = st.sidebar.radio("Ir para:", opcoes_menu, label_visibility="collapsed")
+
+st.sidebar.divider()
+
+# Informações do usuário e botão Sair na barra lateral
+st.sidebar.markdown(f"👤 **Logado:** {usuario_atual}")
+st.sidebar.markdown(f"🛡️ **Perfil:** `{perfil_atual}`")
+if st.sidebar.button("🚪 Sair do Sistema", use_container_width=True):
+    st.session_state["autenticado"] = False
+    st.session_state["usuario_logado"] = None
+    st.session_state["perfil"] = None
+    st.rerun()
 
 st.title("🧀 Controle de Estoque & Expedição FEFO")
 st.markdown("Gerenciamento inteligente de laticínios baseado no critério **Primeiro que Vence, Primeiro que Sai (FEFO)**.")
