@@ -7,7 +7,8 @@ from supabase import create_client
 st.set_page_config(
     page_title="Controle FEFO - Laticínios", page_icon="🧀", layout="wide"
 )
-# Ocultar o rodapé padrão e o menu superior do Streamlit
+
+# --- OCULTAR MARCA D'ÁGUA E ELEMENTOS DO STREAMLIT ---
 hide_streamlit_style = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -191,16 +192,14 @@ elif menu == "📥 Entradas (Recebimento & Gestão)":
                 col1, col2 = st.columns(2)
                 with col1:
                     novo_lote = st.text_input("Número do Lote", value=ent_selecionada["numero_lote"])
-                    nova_qtd = st.number_input("Quantidade Recebida", min_value=1, value=ent_selecionada["quantidade_recebida"])
+                    nova_qtd = st.number_input("Quantidade Recebida", min_value=1, value=int(ent_selecionada["quantidade_recebida"]))
                     nova_data_ent = st.date_input("Data de Entrada", value=datetime.strptime(ent_selecionada["data_entrada"], "%Y-%m-%d").date())
                 with col2:
                     nova_validade = st.date_input("Data de Validade", value=datetime.strptime(ent_selecionada["data_validade"], "%Y-%m-%d").date())
                     novo_forn = st.text_input("Fornecedor", value=ent_selecionada["fornecedor"] or "")
                     nova_nf = st.text_input("Nota Fiscal", value=ent_selecionada["nota_fiscal"] or "")
 
-                col_b1, col_b2 = st.columns(2)
-                atualizar_ent = col_b1.form_submit_button("💾 Salvar Alterações")
-                excluir_ent = col_b2.form_submit_button("🗑️ Excluir Entrada")
+                atualizar_ent = st.form_submit_button("💾 Salvar Alterações na Entrada")
 
                 if atualizar_ent:
                     try:
@@ -217,8 +216,10 @@ elif menu == "📥 Entradas (Recebimento & Gestão)":
                     except Exception as e:
                         st.error(f"Erro ao atualizar: {e}")
 
-                if excluir_ent:
-                    st.session_state["confirmar_excluir_entrada"] = ent_selecionada["id"]
+            st.divider()
+            # Botão de exclusão fora do formulário para evitar conflitos de clique
+            if st.button("🗑️ Excluir esta Entrada", type="secondary"):
+                st.session_state["confirmar_excluir_entrada"] = ent_selecionada["id"]
 
             if st.session_state.get("confirmar_excluir_entrada") == ent_selecionada["id"]:
                 st.warning("⚠️ **Tem certeza que deseja excluir esta entrada?** (Isso também removerá saídas vinculadas a este lote).")
@@ -305,12 +306,10 @@ elif menu == "🚚 Saídas (Expedição & Gestão)":
                     novo_mercado = st.text_input("Cliente / Mercado", value=saida_selecionada["cliente_mercado"])
                     novo_pedido = st.text_input("Número do Pedido", value=saida_selecionada["numero_pedido"])
                 with col2:
-                    nova_qtd_exp = st.number_input("Quantidade Expedida", min_value=1, value=saida_selecionada["quantidade_expedida"])
+                    nova_qtd_exp = st.number_input("Quantidade Expedida", min_value=1, value=int(saida_selecionada["quantidade_expedida"]))
                     nova_data_said = st.date_input("Data da Saída", value=datetime.strptime(saida_selecionada["data_saida"], "%Y-%m-%d").date())
 
-                col_b1, col_b2 = st.columns(2)
-                atualizar_said = col_b1.form_submit_button("💾 Salvar Alterações")
-                excluir_said = col_b2.form_submit_button("🗑️ Excluir Saída")
+                atualizar_said = st.form_submit_button("💾 Salvar Alterações na Saída")
 
                 if atualizar_said:
                     try:
@@ -325,8 +324,9 @@ elif menu == "🚚 Saídas (Expedição & Gestão)":
                     except Exception as e:
                         st.error(f"Erro ao atualizar: {e}")
 
-                if excluir_said:
-                    st.session_state["confirmar_excluir_saida"] = saida_selecionada["id"]
+            st.divider()
+            if st.button("🗑️ Excluir esta Saída", type="secondary"):
+                st.session_state["confirmar_excluir_saida"] = saida_selecionada["id"]
 
             if st.session_state.get("confirmar_excluir_saida") == saida_selecionada["id"]:
                 st.warning("⚠️ **Tem certeza que deseja excluir esta saída?** (O saldo retornará ao estoque do lote).")
@@ -400,9 +400,7 @@ elif menu == "📋 Cadastro & Gestão de Produtos":
                     un_atual = prod_selecionado["unidade_medida"] if prod_selecionado["unidade_medida"] in unidades_lista else "un"
                     nova_unidade = st.selectbox("Unidade", unidades_lista, index=unidades_lista.index(un_atual))
 
-                col_b1, col_b2 = st.columns(2)
-                atualizar_p = col_b1.form_submit_button("💾 Salvar Alterações")
-                excluir_p = col_b2.form_submit_button("🗑️ Excluir Produto")
+                atualizar_p = st.form_submit_button("💾 Salvar Alterações no Produto")
 
                 if atualizar_p:
                     try:
@@ -416,8 +414,9 @@ elif menu == "📋 Cadastro & Gestão de Produtos":
                     except Exception as e:
                         st.error(f"Erro ao atualizar produto: {e}")
 
-                if excluir_p:
-                    st.session_state["confirmar_excluir_produto"] = prod_selecionado["id"]
+            st.divider()
+            if st.button("🗑️ Excluir este Produto", type="secondary"):
+                st.session_state["confirmar_excluir_produto"] = prod_selecionado["id"]
 
             if st.session_state.get("confirmar_excluir_produto") == prod_selecionado["id"]:
                 st.warning("⚠️ **Tem certeza que deseja excluir este produto?** (Isso removerá também todas as entradas e saídas vinculadas a ele).")
