@@ -50,22 +50,85 @@ def get_saidas():
     return response.data
 
 
-# --- CABEÇALHO DO APLICATIVO ---
-st.title("🧀 Controle de Estoque & Expedição FEFO")
-st.markdown(
-    "Gerenciamento inteligente de laticínios baseado no critério **Primeiro que Vence, Primeiro que Sai (FEFO)**."
-)
+def get_usuarios():
+    response = supabase.table("usuarios").select("*").order("nome_login").execute()
+    return response.data
 
-# Menu Lateral (Abas do Sistema)
-menu = st.sidebar.selectbox(
-    "Navegação",
-    [
-        "📊 Painel FEFO & Estoque",
-        "📥 Entradas (Recebimento & Gestão)",
-        "🚚 Saídas (Expedição & Gestão)",
-        "📋 Cadastro & Gestão de Produtos",
-    ],
-)
+
+# --- CONTROLE DE SESSÃO (LOGIN) ---
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+    st.session_state["usuario_logado"] = None
+    st.session_state["perfil"] = None
+
+
+# --- TELA DE LOGIN (OBRIGATÓRIA NO TOPO) ---
+if not st.session_state["autenticado"]:
+    st.title("🧀 Controle FEFO - Acesso ao Sistema")
+    st.markdown("Por favor, faça login com suas credenciais para continuar.")
+
+    with st.form("form_login"):
+        login_input = st.text_input("Usuário (Login)")
+        senha_input = st.text_input("Senha", type="password")
+        botao_login = st.form_submit_button("Entrar no Sistema")
+
+        if botao_login:
+            if not login_input or not senha_input:
+                st.error("Preencha o usuário e a senha.")
+            else:
+                try:
+                    res = supabase.table("usuarios").select("*").eq("nome_login", login_input).eq("senha", senha_input).execute()
+                    usuarios_encontrados = res.data
+                    if usuarios_encontrados:
+                        user = usuarios_encontrados[0]
+                        st.session_state["autenticado"] = True
+                        st.session_state["usuario_logado"] = user["nome_login"]
+                        st.session_state["perfil"] = user["perfil"]
+                        st.success("Login realizado com sucesso!")
+                        st.rerun()
+                    else:
+                        st.error("Usuário ou senha incorretos.")
+                except Exception as e:
+                    st.error(f"Erro ao autenticar: {e}")
+    
+    st.stop()  # Impede totalmente que o restante do app seja renderizado sem login
+
+
+# ==========================================
+# APLICATIVO PRINCIPAL (APÓS O LOGIN)
+# ==========================================
+
+perfil_atual = st.session_state["perfil"]
+usuario_atual = st.session_state["usuario_logado"]
+
+# Barra Lateral com Informações e Logout
+st.sidebar.markdown(f"👤 **Logado como:** {usuario_atual}")
+st.sidebar.markdown(f"🛡️ **Perfil:** `{perfil_atual}`")
+
+if st.sidebar.button("🚪 Sair do Sistema"):
+    st.session_state["autenticado"] = False
+    st.session_state["usuario_logado"] = None
+    st.session_state["perfil"] = None
+    st.rerun()
+
+st.sidebar.divider()
+
+# Montar opções de menu de acordo com o perfil
+opcoes_menu = [
+    "📊 Painel FEFO & Estoque",
+    "📥 Entradas (Recebimento & Gestão)",
+    "🚚 Saídas (Expedição & Gestão)",
+    "📋 Cadastro & Gestão de Produtos",
+]
+
+if perfil_atual == "Administrador":
+    opcoes_menu.append("👥 Gerenciar Usuários")
+
+menu = st.sidebar.selectbox("Navegação", opcoes_menu)
+
+st.title("🧀 Controle de Estoque & Expedição FEFO")
+st.markdown("Gerenciamento inteligente de laticínios baseado no critério **Primeiro que Vence, Primeiro que Sai (FEFO)**.")
+
 
 # ==========================================
 # 1. PAINEL FEFO & ESTOQUE
@@ -131,13 +194,20 @@ if menu == "📊 Painel FEFO & Estoque":
 
         st.dataframe(df_display, use_container_width=True, hide_index=True)
 
+
 # ==========================================
 # 2. ENTRADAS (CADASTRO, EDIÇÃO E EXCLUSÃO)
 # ==========================================
 elif menu == "📥 Entradas (Recebimento & Gestão)":
     st.header("Gerenciamento de Entradas (Lotes)")
 
-    aba_cad, aba_ger = st.tabs(["➕ Registrar Nova Entrada", "✏️ Gerenciar Entradas Existentes"])
+    if perfil_atual == "Administrador":
+        abas = st.tabs(["➕ Registrar Nova Entrada", "✏️ Gerenciar Entradas Existentes"])
+        aba_cad, aba_ger = abas[0], abas[1]
+    else:
+        aba_cad = st.container()
+        aba_ger = None
+        st.info("ℹ️ Perfil Funcionário: Acesso permitido apenas para cadastrar novas entradas.")
 
     produtos = get_produtos()
     produto_dict = {p["nome_produto"]: p["id"] for p in produtos} if produtos else {}
@@ -178,63 +248,64 @@ elif menu == "📥 Entradas (Recebimento & Gestão)":
                         except Exception as e:
                             st.error(f"Erro ao salvar: {e}")
 
-    with aba_ger:
-        st.subheader("Editar ou Excluir Entradas")
-        entradas_list = get_entradas()
-        if not entradas_list:
-            st.info("Nenhuma entrada cadastrada.")
-        else:
-            entrada_opcoes = {f"Lote: {e['numero_lote']} | Produto: {e['produtos']['nome_produto']} | Qtd: {e['quantidade_recebida']} | Val: {e['data_validade']}": e for e in entradas_list}
-            escolha_ent = st.selectbox("Selecione a Entrada para Gerenciar", list(entrada_opcoes.keys()))
-            ent_selecionada = entrada_opcoes[escolha_ent]
+    if aba_ger is not None:
+        with aba_ger:
+            st.subheader("Editar ou Excluir Entradas")
+            entradas_list = get_entradas()
+            if not entradas_list:
+                st.info("Nenhuma entrada cadastrada.")
+            else:
+                entrada_opcoes = {f"Lote: {e['numero_lote']} | Produto: {e['produtos']['nome_produto']} | Qtd: {e['quantidade_recebida']} | Val: {e['data_validade']}": e for e in entradas_list}
+                escolha_ent = st.selectbox("Selecione a Entrada para Gerenciar", list(entrada_opcoes.keys()))
+                ent_selecionada = entrada_opcoes[escolha_ent]
 
-            with st.form("form_edita_entrada"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    novo_lote = st.text_input("Número do Lote", value=ent_selecionada["numero_lote"])
-                    nova_qtd = st.number_input("Quantidade Recebida", min_value=1, value=int(ent_selecionada["quantidade_recebida"]))
-                    nova_data_ent = st.date_input("Data de Entrada", value=datetime.strptime(ent_selecionada["data_entrada"], "%Y-%m-%d").date())
-                with col2:
-                    nova_validade = st.date_input("Data de Validade", value=datetime.strptime(ent_selecionada["data_validade"], "%Y-%m-%d").date())
-                    novo_forn = st.text_input("Fornecedor", value=ent_selecionada["fornecedor"] or "")
-                    nova_nf = st.text_input("Nota Fiscal", value=ent_selecionada["nota_fiscal"] or "")
+                with st.form("form_edita_entrada"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        novo_lote = st.text_input("Número do Lote", value=ent_selecionada["numero_lote"])
+                        nova_qtd = st.number_input("Quantidade Recebida", min_value=1, value=int(ent_selecionada["quantidade_recebida"]))
+                        nova_data_ent = st.date_input("Data de Entrada", value=datetime.strptime(ent_selecionada["data_entrada"], "%Y-%m-%d").date())
+                    with col2:
+                        nova_validade = st.date_input("Data de Validade", value=datetime.strptime(ent_selecionada["data_validade"], "%Y-%m-%d").date())
+                        novo_forn = st.text_input("Fornecedor", value=ent_selecionada["fornecedor"] or "")
+                        nova_nf = st.text_input("Nota Fiscal", value=ent_selecionada["nota_fiscal"] or "")
 
-                atualizar_ent = st.form_submit_button("💾 Salvar Alterações na Entrada")
+                    atualizar_ent = st.form_submit_button("💾 Salvar Alterações na Entrada")
 
-                if atualizar_ent:
-                    try:
-                        supabase.table("entradas").update({
-                            "numero_lote": novo_lote,
-                            "quantidade_recebida": int(nova_qtd),
-                            "data_entrada": str(nova_data_ent),
-                            "data_validade": str(nova_validade),
-                            "fornecedor": novo_forn,
-                            "nota_fiscal": nova_nf
-                        }).eq("id", ent_selecionada["id"]).execute()
-                        st.success("Entrada atualizada com sucesso!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao atualizar: {e}")
+                    if atualizar_ent:
+                        try:
+                            supabase.table("entradas").update({
+                                "numero_lote": novo_lote,
+                                "quantidade_recebida": int(nova_qtd),
+                                "data_entrada": str(nova_data_ent),
+                                "data_validade": str(nova_validade),
+                                "fornecedor": novo_forn,
+                                "nota_fiscal": nova_nf
+                            }).eq("id", ent_selecionada["id"]).execute()
+                            st.success("Entrada atualizada com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar: {e}")
 
-            st.divider()
-            # Botão de exclusão fora do formulário para evitar conflitos de clique
-            if st.button("🗑️ Excluir esta Entrada", type="secondary"):
-                st.session_state["confirmar_excluir_entrada"] = ent_selecionada["id"]
+                st.divider()
+                if st.button("🗑️ Excluir esta Entrada", type="secondary"):
+                    st.session_state["confirmar_excluir_entrada"] = ent_selecionada["id"]
 
-            if st.session_state.get("confirmar_excluir_entrada") == ent_selecionada["id"]:
-                st.warning("⚠️ **Tem certeza que deseja excluir esta entrada?** (Isso também removerá saídas vinculadas a este lote).")
-                col_sim, col_nao = st.columns(2)
-                if col_sim.button("Sim, Excluir Definitivamente", key="sim_del_ent"):
-                    try:
-                        supabase.table("entradas").delete().eq("id", ent_selecionada["id"]).execute()
-                        st.success("Entrada excluída com sucesso!")
+                if st.session_state.get("confirmar_excluir_entrada") == ent_selecionada["id"]:
+                    st.warning("⚠️ **Tem certeza que deseja excluir esta entrada?** (Isso também removerá saídas vinculadas a este lote).")
+                    col_sim, col_nao = st.columns(2)
+                    if col_sim.button("Sim, Excluir Definitivamente", key="sim_del_ent"):
+                        try:
+                            supabase.table("entradas").delete().eq("id", ent_selecionada["id"]).execute()
+                            st.success("Entrada excluída com sucesso!")
+                            del st.session_state["confirmar_excluir_entrada"]
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao excluir: {e}")
+                    if col_nao.button("Cancelar", key="nao_del_ent"):
                         del st.session_state["confirmar_excluir_entrada"]
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao excluir: {e}")
-                if col_nao.button("Cancelar", key="nao_del_ent"):
-                    del st.session_state["confirmar_excluir_entrada"]
-                    st.rerun()
+
 
 # ==========================================
 # 3. SAÍDAS (EXPEDIÇÃO, EDIÇÃO E EXCLUSÃO)
@@ -242,7 +313,13 @@ elif menu == "📥 Entradas (Recebimento & Gestão)":
 elif menu == "🚚 Saídas (Expedição & Gestão)":
     st.header("Expedição de Mercadoria para os Mercados")
 
-    aba_cad_s, aba_ger_s = st.tabs(["🚚 Registrar Nova Saída", "✏️ Gerenciar Saídas Existentes"])
+    if perfil_atual == "Administrador":
+        abas_s = st.tabs(["🚚 Registrar Nova Saída", "✏️ Gerenciar Saídas Existentes"])
+        aba_cad_s, aba_ger_s = abas_s[0], abas_s[1]
+    else:
+        aba_cad_s = st.container()
+        aba_ger_s = None
+        st.info("ℹ️ Perfil Funcionário: Acesso permitido apenas para registrar novas saídas.")
 
     estoque = get_estoque_fefo()
 
@@ -290,66 +367,74 @@ elif menu == "🚚 Saídas (Expedição & Gestão)":
                         except Exception as e:
                             st.error(f"Erro ao registrar saída: {e}")
 
-    with aba_ger_s:
-        st.subheader("Editar ou Excluir Saídas (Expedições)")
-        saidas_list = get_saidas()
-        if not saidas_list:
-            st.info("Nenhuma saída registrada.")
-        else:
-            saida_opcoes = {f"Pedido: {s['numero_pedido']} | Mercado: {s['cliente_mercado']} | Qtd: {s['quantidade_expedida']}": s for s in saidas_list}
-            escolha_s = st.selectbox("Selecione a Saída para Gerenciar", list(saida_opcoes.keys()))
-            saida_selecionada = saida_opcoes[escolha_s]
+    if aba_ger_s is not None:
+        with aba_ger_s:
+            st.subheader("Editar ou Excluir Saídas (Expedições)")
+            saidas_list = get_saidas()
+            if not saidas_list:
+                st.info("Nenhuma saída registrada.")
+            else:
+                saida_opcoes = {f"Pedido: {s['numero_pedido']} | Mercado: {s['cliente_mercado']} | Qtd: {s['quantidade_expedida']}": s for s in saidas_list}
+                escolha_s = st.selectbox("Selecione a Saída para Gerenciar", list(saida_opcoes.keys()))
+                saida_selecionada = saida_opcoes[escolha_s]
 
-            with st.form("form_edita_saida"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    novo_mercado = st.text_input("Cliente / Mercado", value=saida_selecionada["cliente_mercado"])
-                    novo_pedido = st.text_input("Número do Pedido", value=saida_selecionada["numero_pedido"])
-                with col2:
-                    nova_qtd_exp = st.number_input("Quantidade Expedida", min_value=1, value=int(saida_selecionada["quantidade_expedida"]))
-                    nova_data_said = st.date_input("Data da Saída", value=datetime.strptime(saida_selecionada["data_saida"], "%Y-%m-%d").date())
+                with st.form("form_edita_saida"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        novo_mercado = st.text_input("Cliente / Mercado", value=saida_selecionada["cliente_mercado"])
+                        novo_pedido = st.text_input("Número do Pedido", value=saida_selecionada["numero_pedido"])
+                    with col2:
+                        nova_qtd_exp = st.number_input("Quantidade Expedida", min_value=1, value=int(saida_selecionada["quantidade_expedida"]))
+                        nova_data_said = st.date_input("Data da Saída", value=datetime.strptime(saida_selecionada["data_saida"], "%Y-%m-%d").date())
 
-                atualizar_said = st.form_submit_button("💾 Salvar Alterações na Saída")
+                    atualizar_said = st.form_submit_button("💾 Salvar Alterações na Saída")
 
-                if atualizar_said:
-                    try:
-                        supabase.table("saidas").update({
-                            "cliente_mercado": novo_mercado,
-                            "numero_pedido": novo_pedido,
-                            "quantidade_expedida": int(nova_qtd_exp),
-                            "data_saida": str(nova_data_said)
-                        }).eq("id", saida_selecionada["id"]).execute()
-                        st.success("Saída atualizada com sucesso!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao atualizar: {e}")
+                    if atualizar_said:
+                        try:
+                            supabase.table("saidas").update({
+                                "cliente_mercado": novo_mercado,
+                                "numero_pedido": novo_pedido,
+                                "quantidade_expedida": int(nova_qtd_exp),
+                                "data_saida": str(nova_data_said)
+                            }).eq("id", saida_selecionada["id"]).execute()
+                            st.success("Saída atualizada com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar: {e}")
 
-            st.divider()
-            if st.button("🗑️ Excluir esta Saída", type="secondary"):
-                st.session_state["confirmar_excluir_saida"] = saida_selecionada["id"]
+                st.divider()
+                if st.button("🗑️ Excluir esta Saída", type="secondary"):
+                    st.session_state["confirmar_excluir_saida"] = saida_selecionada["id"]
 
-            if st.session_state.get("confirmar_excluir_saida") == saida_selecionada["id"]:
-                st.warning("⚠️ **Tem certeza que deseja excluir esta saída?** (O saldo retornará ao estoque do lote).")
-                col_sim, col_nao = st.columns(2)
-                if col_sim.button("Sim, Excluir Definitivamente", key="sim_del_said"):
-                    try:
-                        supabase.table("saidas").delete().eq("id", saida_selecionada["id"]).execute()
-                        st.success("Saída excluída com sucesso!")
+                if st.session_state.get("confirmar_excluir_saida") == saida_selecionada["id"]:
+                    st.warning("⚠️ **Tem certeza que deseja excluir esta saída?** (O saldo retornará ao estoque do lote).")
+                    col_sim, col_nao = st.columns(2)
+                    if col_sim.button("Sim, Excluir Definitivamente", key="sim_del_said"):
+                        try:
+                            supabase.table("saidas").delete().eq("id", saida_selecionada["id"]).execute()
+                            st.success("Saída excluída com sucesso!")
+                            del st.session_state["confirmar_excluir_saida"]
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao excluir: {e}")
+                    if col_nao.button("Cancelar", key="nao_del_said"):
                         del st.session_state["confirmar_excluir_saida"]
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao excluir: {e}")
-                if col_nao.button("Cancelar", key="nao_del_said"):
-                    del st.session_state["confirmar_excluir_saida"]
-                    st.rerun()
+
 
 # ==========================================
-# 4. CADASTRO DE PRODUTOS (COM EDIÇÃO E EXCLUSÃO)
+# 4. CADASTRO DE PRODUTOS
 # ==========================================
 elif menu == "📋 Cadastro & Gestão de Produtos":
     st.header("Gerenciamento de Produtos (Linha de Laticínios)")
 
-    aba_prod_cad, aba_prod_ger = st.tabs(["➕ Cadastrar Novo Produto", "✏️ Editar ou Excluir Produtos"])
+    if perfil_atual == "Administrador":
+        abas_prod = st.tabs(["➕ Cadastrar Novo Produto", "✏️ Editar ou Excluir Produtos"])
+        aba_prod_cad, aba_prod_ger = abas_prod[0], abas_prod[1]
+    else:
+        aba_prod_cad = st.container()
+        aba_prod_ger = None
+        st.info("ℹ️ Perfil Funcionário: Acesso permitido apenas para cadastrar novos produtos.")
 
     with aba_prod_cad:
         with st.form("form_produto"):
@@ -377,58 +462,155 @@ elif menu == "📋 Cadastro & Gestão de Produtos":
                     except Exception as e:
                         st.error(f"Erro ao cadastrar: {e}")
 
-    with aba_prod_ger:
-        st.subheader("Gerenciar Produtos Cadastrados")
-        produtos_cadastrados = get_produtos()
-        if not produtos_cadastrados:
-            st.info("Nenhum produto cadastrado.")
-        else:
-            prod_dict_ger = {p["nome_produto"]: p for p in produtos_cadastrados}
-            escolha_prod = st.selectbox("Selecione o Produto", list(prod_dict_ger.keys()))
-            prod_selecionado = prod_dict_ger[escolha_prod]
+    if aba_prod_ger is not None:
+        with aba_prod_ger:
+            st.subheader("Gerenciar Produtos Cadastrados")
+            produtos_cadastrados = get_produtos()
+            if not produtos_cadastrados:
+                st.info("Nenhum produto cadastrado.")
+            else:
+                prod_dict_ger = {p["nome_produto"]: p for p in produtos_cadastrados}
+                escolha_prod = st.selectbox("Selecione o Produto", list(prod_dict_ger.keys()))
+                prod_selecionado = prod_dict_ger[escolha_prod]
 
-            with st.form("form_edita_produto"):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    novo_nome = st.text_input("Nome do Produto", value=prod_selecionado["nome_produto"])
-                with col2:
-                    categorias_lista = ["Iogurtes", "Queijos", "Leites", "Requeijão / Cremes", "Manteiga", "Outros"]
-                    cat_atual = prod_selecionado["categoria"] if prod_selecionado["categoria"] in categorias_lista else "Iogurtes"
-                    nova_cat = st.selectbox("Categoria", categorias_lista, index=categorias_lista.index(cat_atual))
-                with col3:
-                    unidades_lista = ["un", "caixa", "kg", "litros"]
-                    un_atual = prod_selecionado["unidade_medida"] if prod_selecionado["unidade_medida"] in unidades_lista else "un"
-                    nova_unidade = st.selectbox("Unidade", unidades_lista, index=unidades_lista.index(un_atual))
+                with st.form("form_edita_produto"):
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        novo_nome = st.text_input("Nome do Produto", value=prod_selecionado["nome_produto"])
+                    with col2:
+                        categorias_lista = ["Iogurtes", "Queijos", "Leites", "Requeijão / Cremes", "Manteiga", "Outros"]
+                        cat_atual = prod_selecionado["categoria"] if prod_selecionado["categoria"] in categorias_lista else "Iogurtes"
+                        nova_cat = st.selectbox("Categoria", categorias_lista, index=categorias_lista.index(cat_atual))
+                    with col3:
+                        unidades_lista = ["un", "caixa", "kg", "litros"]
+                        un_atual = prod_selecionado["unidade_medida"] if prod_selecionado["unidade_medida"] in unidades_lista else "un"
+                        nova_unidade = st.selectbox("Unidade", unidades_lista, index=unidades_lista.index(un_atual))
 
-                atualizar_p = st.form_submit_button("💾 Salvar Alterações no Produto")
+                    atualizar_p = st.form_submit_button("💾 Salvar Alterações no Produto")
 
-                if atualizar_p:
-                    try:
-                        supabase.table("produtos").update({
-                            "nome_produto": novo_nome,
-                            "categoria": nova_cat,
-                            "unidade_medida": nova_unidade
-                        }).eq("id", prod_selecionado["id"]).execute()
-                        st.success("Produto atualizado com sucesso!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao atualizar produto: {e}")
+                    if atualizar_p:
+                        try:
+                            supabase.table("produtos").update({
+                                "nome_produto": novo_nome,
+                                "categoria": nova_cat,
+                                "unidade_medida": nova_unidade
+                            }).eq("id", prod_selecionado["id"]).execute()
+                            st.success("Produto atualizado com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar produto: {e}")
 
-            st.divider()
-            if st.button("🗑️ Excluir este Produto", type="secondary"):
-                st.session_state["confirmar_excluir_produto"] = prod_selecionado["id"]
+                st.divider()
+                if st.button("🗑️ Excluir este Produto", type="secondary"):
+                    st.session_state["confirmar_excluir_produto"] = prod_selecionado["id"]
 
-            if st.session_state.get("confirmar_excluir_produto") == prod_selecionado["id"]:
-                st.warning("⚠️ **Tem certeza que deseja excluir este produto?** (Isso removerá também todas as entradas e saídas vinculadas a ele).")
-                col_sim, col_nao = st.columns(2)
-                if col_sim.button("Sim, Excluir Definitivamente", key="sim_del_prod"):
-                    try:
-                        supabase.table("produtos").delete().eq("id", prod_selecionado["id"]).execute()
-                        st.success("Produto excluído com sucesso!")
+                if st.session_state.get("confirmar_excluir_produto") == prod_selecionado["id"]:
+                    st.warning("⚠️ **Tem certeza que deseja excluir este produto?** (Isso removerá também todas as entradas e saídas vinculadas a ele).")
+                    col_sim, col_nao = st.columns(2)
+                    if col_sim.button("Sim, Excluir Definitivamente", key="sim_del_prod"):
+                        try:
+                            supabase.table("produtos").delete().eq("id", prod_selecionado["id"]).execute()
+                            st.success("Produto excluído com sucesso!")
+                            del st.session_state["confirmar_excluir_produto"]
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao excluir: {e}")
+                    if col_nao.button("Cancelar", key="nao_del_prod"):
                         del st.session_state["confirmar_excluir_produto"]
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao excluir: {e}")
-                if col_nao.button("Cancelar", key="nao_del_prod"):
-                    del st.session_state["confirmar_excluir_produto"]
-                    st.rerun()
+
+
+# ==========================================
+# 5. GERENCIAMENTO DE USUÁRIOS (EXCLUSIVO ADMIN)
+# ==========================================
+elif menu == "👥 Gerenciar Usuários":
+    st.header("Gerenciamento de Usuários do Sistema")
+
+    if perfil_atual != "Administrador":
+        st.error("Acesso negado. Apenas administradores podem gerenciar usuários.")
+    else:
+        tab_u_cad, tab_u_ger = st.tabs(["➕ Cadastrar Novo Usuário", "✏️ Editar ou Excluir Usuários"])
+
+        with tab_u_cad:
+            with st.form("form_novo_usuario"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    novo_login = st.text_input("Nome de Login")
+                with col2:
+                    nova_senha = st.text_input("Senha", type="password")
+                with col3:
+                    novo_perfil = st.selectbox("Perfil de Acesso", ["Funcionário", "Administrador"])
+
+                cadastrar_usuario_btn = st.form_submit_button("Criar Usuário")
+
+                if cadastrar_usuario_btn:
+                    if not novo_login or not nova_senha:
+                        st.error("Preencha o login e a senha.")
+                    else:
+                        try:
+                            supabase.table("usuarios").insert({
+                                "nome_login": novo_login,
+                                "senha": nova_senha,
+                                "perfil": novo_perfil
+                            }).execute()
+                            st.success(f"Usuário '{novo_login}' cadastrado com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao cadastrar usuário (talvez o login já exista): {e}")
+
+        with tab_u_ger:
+            st.subheader("Lista e Gestão de Usuários")
+            usuarios_cadastrados = get_usuarios()
+
+            if not usuarios_cadastrados:
+                st.info("Nenhum usuário cadastrado.")
+            else:
+                user_dict = {u["nome_login"]: u for u in usuarios_cadastrados}
+                escolha_u = st.selectbox("Selecione o Usuário", list(user_dict.keys()))
+                u_selecionado = user_dict[escolha_u]
+
+                with st.form("form_edita_usuario"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        edit_login = st.text_input("Nome de Login", value=u_selecionado["nome_login"])
+                        edit_senha = st.text_input("Nova Senha", value=u_selecionado["senha"])
+                    with col2:
+                        perfis_disp = ["Funcionário", "Administrador"]
+                        p_atual = u_selecionado["perfil"] if u_selecionado["perfil"] in perfis_disp else "Funcionário"
+                        edit_perfil = st.selectbox("Perfil", perfis_disp, index=perfis_disp.index(p_atual))
+
+                    salvar_u_btn = st.form_submit_button("💾 Salvar Alterações no Usuário")
+
+                    if salvar_u_btn:
+                        try:
+                            supabase.table("usuarios").update({
+                                "nome_login": edit_login,
+                                "senha": edit_senha,
+                                "perfil": edit_perfil
+                            }).eq("id", u_selecionado["id"]).execute()
+                            st.success("Usuário atualizado com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar usuário: {e}")
+
+                st.divider()
+                if u_selecionado["nome_login"] == "admin":
+                    st.info("ℹ️ O usuário Administrador principal (`admin`) não pode ser excluído.")
+                else:
+                    if st.button("🗑️ Excluir este Usuário", type="secondary"):
+                        st.session_state["confirmar_excluir_usuario"] = u_selecionado["id"]
+
+                    if st.session_state.get("confirmar_excluir_usuario") == u_selecionado["id"]:
+                        st.warning(f"⚠️ **Tem certeza que deseja excluir o usuário '{u_selecionado['nome_login']}'?**")
+                        col_sim, col_nao = st.columns(2)
+                        if col_sim.button("Sim, Excluir Definitivamente", key="sim_del_u"):
+                            try:
+                                supabase.table("usuarios").delete().eq("id", u_selecionado["id"]).execute()
+                                st.success("Usuário excluído com sucesso!")
+                                del st.session_state["confirmar_excluir_usuario"]
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao excluir: {e}")
+                        if col_nao.button("Cancelar", key="nao_del_u"):
+                            del st.session_state["confirmar_excluir_usuario"]
+                            st.rerun()
